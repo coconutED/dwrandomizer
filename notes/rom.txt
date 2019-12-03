@@ -63,6 +63,7 @@ Various Data            |                                       |
 7AC0 - 7EAD             | Item, Enemy, and Spell Menu Text      |
 7E20 - 7E63             | Weapon & Item Costs (text)            |
 8039 - BCBA             | Dialog text                           |
+9895 - 9938             | Rimuldar west island old man text     |
 A236 - A298             | NPC Token location text               |
 AD95 - ADAC             | "The spell will not work."            |
 BEE1 - BFE7             | Empty Space                           |
