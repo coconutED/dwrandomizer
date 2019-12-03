@@ -1910,6 +1910,27 @@ static void dwr_token_dialogue(dw_rom *rom)
 }
 
 /**
+ * Changes the Rimuldar NPC dialogue to provide Rainbow Bridge location
+ *
+ * @param rom The rom struct.
+ */
+static void dwr_bridge_dialogue(dw_rom *rom)
+{
+    dw_rainbow_drop *rainbow_drop;
+    int dx, dy;
+    uint8_t text1[64];
+
+    rainbow_drop = rom->map.rainbow_drop;
+    dx = rainbow_drop->x - rom->map.warps_from[WARP_TANTEGEL].x;
+    dy = rainbow_drop->y - rom->map.warps_from[WARP_TANTEGEL].y;
+    snprintf((char*)text1, 63, "Erdrick created a rainbow %3d %s and %3d %s from Tantegel",
+                ABS(dy), (dy < 0) ? "north" : "south",
+                ABS(dx), (dx < 0) ? "west" : "east");
+    ascii2dw(text1);
+    patch(rom, 0x9886, 62, text1);
+}
+
+/**
  * Writes the new rom out to disk.
  *
  * @param rom The rom struct
@@ -1978,6 +1999,7 @@ uint64_t dwr_randomize(const char* input_file, uint64_t seed, char *flags,
     dwr_menu_wrap(&rom);
     dwr_speed_hacks(&rom);
     dwr_token_dialogue(&rom);
+    dwr_bridge_dialogue(&rom);
     chaos_mode(&rom);
     open_charlock(&rom);
     short_charlock(&rom);
