@@ -397,6 +397,66 @@ static dw_border_tile place(dw_map *map, dw_warp_index warp_idx, dw_tile tile,
     return border_for(old_tile);
 }
 
+/** Moved up so place_charlock can use
+ * Finds the largest 2 land masses on the map.
+ *
+ * @param map The map struct
+ * @param lm_sizes An array containing the sizes of each land mass
+ * @param lm_count The number of land masses
+ * @param largest A pointer to fill with the largest land mass
+ * @param next A pointer to fill with the next largest land mass
+ */
+static inline void find_largest_lm(int *lm_sizes, int lm_count,
+                            int *largest, int *next)
+{
+    int i;
+
+    *largest = *next = 0;
+    for(i=0; i < lm_count; i++) {
+        if (!(*largest) || lm_sizes[i] > lm_sizes[(*largest)-1]) {
+            *next = *largest;
+            *largest = i + 1;
+        } else if (!(*next) || lm_sizes[i] > lm_sizes[(*next)-1]) {
+            *next = i + 1;
+        }
+    }
+
+    if (lm_sizes[(*next)-1] < MIN_LM_SIZE) {
+        *next = *largest;
+    }
+//    printf("Largest: %d(%d), Next: %d(%d)\n", *largest, lm_sizes[(*largest)-1],
+//           *next, lm_sizes[(*next)-1]);
+}
+
+/** Moved up so place_charlock can use
+ * Finds all land masses on the map along with their sizes.
+ *
+ * @param map The map struct
+ * @param lm_sizes An array to fill with the land mass sizes
+ * @param largest The index of the largest land mass
+ * @param next The index of the next larges land mass
+ * @return The total number of land masses found
+ */
+static int find_walkable_area(dw_map *map, int *lm_sizes, int *largest,
+                                     int *next)
+{
+    int x, y;
+    uint8_t land_mass = 0;
+
+    memset(map->walkable, 0, 120 * 120);
+    for (y=0; y < 120; y++) {
+        for (x=0; x < 120; x++) {
+            if (!map->walkable[x][y] && tile_is_walkable(map->tiles[x][y])) {
+                lm_sizes[land_mass] = 
+                        map_land_mass(map, x, y, land_mass+1);
+                land_mass++;
+            }
+        }
+    }
+    find_largest_lm(lm_sizes, land_mass, largest, next);
+    return (int)land_mass;
+}
+
 /**
  * Places Charlock castle on the map and updates the rainbow drop code
  *
@@ -407,52 +467,138 @@ static dw_border_tile place(dw_map *map, dw_warp_index warp_idx, dw_tile tile,
 static void place_charlock(dw_map *map, int largest, int next)
 {
 
-        uint8_t x = 0, y = 0;
-        int  i, j;
-        dw_warp *warp;
+    uint8_t x = 0, y = 0;
+    int  i, j;
+    dw_warp *warp;
+
+    /* Added Variables for advanced placement of Charlock
+     * bridge_count = the number of suitable bridges to use for the rainbow bridge
+     * bridge_index = the coordinates for each suitable bridge
+     * lm_sizes is used for recalculating the land masses as bridges are removed
+     * lm_east / lm_west = the land mass on the respective side of the rainbow bridge
+     * rbridge = bridge among the suitable bridges randomly selected to be the rainbow bridge
+     * cx / cy = coordinates of charlock*/
+
+    uint8_t bridge_count = 0;
+    uint8_t bridge_index[256][2];
+    int lm_sizes[256];
+    int lm_east;
+    int lm_west;
+    uint8_t rbridge;
+    uint8_t cx = 0, cy = 0;
 
     if (!RANDOM_MAP(map)) {
         map->rainbow_drop->x = 65;
         map->rainbow_bridge->x = 64;
         map->rainbow_bridge->y = map->rainbow_drop->y = 49;
-        x = 65; y = 49;
-
+        x = /*65*/ 64; y = 49; /*Changed x coordinate to Rainbow Bridge*/
     } else {
         warp = &map->warps_from[WARP_CHARLOCK];
 
-        while(x < 7 || x > 118 || y < 3 || y > 116) {
-            map_find_land(map, largest, next, &x, &y, FALSE);
-        }
-        warp->x = x-3;
-        warp->y = y;
-        for (i = -3; i <= 3; i++) {
-            for (j = -3; j <= 3; j++) {
-                if (i < 0 || j != 0)
-                    map->tiles[x - 3 + i][y + j] = TILE_BLOCK;
-            }
-        }
-        for (i = -2; i <= 2; i++) {
-            for (j = -2; j <= 2; j++) {
-                map->tiles[x - 3 + i][y + j] = TILE_WATER;
-            }
-        }
-        for (i=-1; i <= 1; i++) {
-            for (j=-1; j <= 1; j++) {
-                map->tiles[x-3+i][y+j] = TILE_SWAMP;
-            }
-        }
-        map->tiles[x-3][y] = TILE_CASTLE;
-        map->rainbow_drop->x = warp->x + 3;
-        map->rainbow_bridge->x = warp->x + 2;
-        map->rainbow_bridge->y = map->rainbow_drop->y = warp->y;
+        /* Advanced Placement of Charlock*/
 
+        /*Search for Bridge tiles*/
+        for (i=1; i <= 120; i++) {
+            for (j=2; j <= 119; j++) {
+                /*if a bridge is found, convert it to water*/
+                if (map->tiles[j][i] == TILE_BRIDGE) {
+                    map->tiles[j][i] = TILE_WATER;
+                    /*calculate the new land mass sizes*/
+                    find_walkable_area(map, lm_sizes, &largest, &next);
+                    /*check tile to see if new land masses are suitable
+                     *one side of bridge must be on largest or next
+                     *other side must not be on either largest or next*/
+                    lm_east = map->walkable[j+1][i];
+                    lm_west = map->walkable[j-1][i];
+                    /*due to a graphics bug, the rainbow drop spot must be on the east side of the bridge
+                     * code allowing the opposite has been commented out, but remains here in case
+                     * the Rainbow Drop map redraw routing is found and editable later*/
+                    if (lm_east == largest || lm_east == next /*|| lm_west == largest || lm_west == next*/) {
+                        if ((lm_east != largest && lm_east != next) || (lm_west != largest && lm_west != next)) {
+                            /*collect and index suitable bridge locations*/                            
+                            bridge_index[bridge_count][0] = j;
+                            bridge_index[bridge_count][1] = i;
+                            bridge_count++;
+                        }
+                    }
+                /*change the tile back to a bridge and continue search*/
+                map->tiles[j][i] = TILE_BRIDGE;
+                }
+            }
+        }
+        
+        /*if no suitable bridges are found, generate Charlock the old way*/
+        if (bridge_count == 0) {
+            find_walkable_area(map, lm_sizes, &largest, &next);
+            while(x < 7 || x > 118 || y < 3 || y > 116) {
+                map_find_land(map, largest, next, &x, &y, FALSE);
+            }
+            warp->x = x-3;
+            warp->y = y;
+            for (i = -3; i <= 3; i++) {
+                for (j = -3; j <= 3; j++) {
+                    if (i < 0 || j != 0) {
+                        map->tiles[x - 3 + i][y + j] = TILE_BLOCK;
+                    }
+                }
+            }
+            for (i = -2; i <= 2; i++) {
+                for (j = -2; j <= 2; j++) {
+                    map->tiles[x - 3 + i][y + j] = TILE_WATER;
+                }
+            }
+            for (i=-1; i <= 1; i++) {
+                for (j=-1; j <= 1; j++) {
+                    map->tiles[x-3+i][y+j] = TILE_SWAMP;
+                }
+            }
+            map->tiles[x-3][y] = TILE_CASTLE;
+            map->rainbow_drop->x = warp->x + 3;
+            map->rainbow_bridge->x = warp->x + 2;
+            map->rainbow_bridge->y = map->rainbow_drop->y = warp->y;
+            /*shift x to coincide with x coordinate of rainbow bridge*/
+            x = x-1;
+        } else {
+            /*select from among the suitable bridges found*/
+            rbridge = mt_rand(0,bridge_count);
+            /*set rainbow bridge to the location of the selected bridge*/
+            x = bridge_index[rbridge][0];
+            y = bridge_index[rbridge][1];
+            map->tiles[x][y] = TILE_WATER;
+            map->rainbow_bridge->x = x;
+            map->rainbow_bridge->y = y;
+
+            /*mark the location of the rainbow bridge*/
+            
+            if (map->tiles[x][y+1] == TILE_WATER) {
+                map->tiles[x][y+1] = TILE_BLOCK;
+            }
+            if (map->tiles[x][y-1] == TILE_WATER) {
+                map->tiles[x][y-1] = TILE_BLOCK;
+            }
+            
+            /*place charlock on side of bridge that is not largest or next*/
+            find_walkable_area(map, lm_sizes, &largest, &next);
+            lm_east = map->walkable[x+1][y];
+            lm_west = map->walkable[x-1][y];
+            map->rainbow_drop->y = y;
+            if (lm_east == largest || lm_east == next) {
+                map->rainbow_drop->x = x+1;
+                map_find_land(map, lm_west, 0, &cx, &cy, FALSE);
+            } else {
+                map->rainbow_drop->x = x-1;
+                map_find_land(map, lm_east, 0, &cx, &cy, FALSE);
+                /*placeholder for code to change the Rainbow Drop redraw routine*/
+            }
+            warp->x = cx;
+            warp->y = cy;
+            map->tiles[cx][cy] = TILE_CASTLE;
+        }
     }
-
     if (OPEN_CHARLOCK(map)) {
         printf("Leaving Charlock open...\n");
-        map->tiles[x-1][y] = TILE_BRIDGE;
+        map->tiles[x/*-1*/][y] = TILE_BRIDGE; /*changed to coincide with x coordinate of rainbow bridge*/
     }
-
 }
 
 /**
@@ -566,65 +712,11 @@ static void map_fill(dw_map *map, dw_tile tile)
 
 }
 
-/**
- * Finds the largest 2 land masses on the map.
- *
- * @param map The map struct
- * @param lm_sizes An array containing the sizes of each land mass
- * @param lm_count The number of land masses
- * @param largest A pointer to fill with the largest land mass
- * @param next A pointer to fill with the next largest land mass
- */
-static inline void find_largest_lm(int *lm_sizes, int lm_count,
-                            int *largest, int *next)
-{
-    int i;
+/*static inline void find_largest_lm(int *lm_sizes, int lm_count,
+                            int *largest, int *next) **moved** */
 
-    *largest = *next = 0;
-    for(i=0; i < lm_count; i++) {
-        if (!(*largest) || lm_sizes[i] > lm_sizes[(*largest)-1]) {
-            *next = *largest;
-            *largest = i + 1;
-        } else if (!(*next) || lm_sizes[i] > lm_sizes[(*next)-1]) {
-            *next = i + 1;
-        }
-    }
-
-    if (lm_sizes[(*next)-1] < MIN_LM_SIZE) {
-        *next = *largest;
-    }
-//    printf("Largest: %d(%d), Next: %d(%d)\n", *largest, lm_sizes[(*largest)-1],
-//           *next, lm_sizes[(*next)-1]);
-}
-
-/**
- * Finds all land masses on the map along with their sizes.
- *
- * @param map The map struct
- * @param lm_sizes An array to fill with the land mass sizes
- * @param largest The index of the largest land mass
- * @param next The index of the next larges land mass
- * @return The total number of land masses found
- */
-static int find_walkable_area(dw_map *map, int *lm_sizes, int *largest,
-                                     int *next)
-{
-    int x, y;
-    uint8_t land_mass = 0;
-
-    memset(map->walkable, 0, 120 * 120);
-    for (y=0; y < 120; y++) {
-        for (x=0; x < 120; x++) {
-            if (!map->walkable[x][y] && tile_is_walkable(map->tiles[x][y])) {
-                lm_sizes[land_mass] = 
-                        map_land_mass(map, x, y, land_mass+1);
-                land_mass++;
-            }
-        }
-    }
-    find_largest_lm(lm_sizes, land_mass, largest, next);
-    return (int)land_mass;
-}
+/*static int find_walkable_area(dw_map *map, int *lm_sizes, int *largest,
+                                     int *next) **moved** */
 
 /**
  * Places landmarks on the map (towns, castles, caves)
@@ -659,7 +751,11 @@ static BOOL place_landmarks(dw_map *map)
     warp = &map->warps_from[WARP_CHARLOCK];
     place_charlock(map, largest, next);
     find_walkable_area(map, lm_sizes, &largest, &next);
-    charlock_lm = map->walkable[warp->x+3][warp->y];
+    /*
+     *modified this line of code so that the charlock accesibility check
+     *directly references the Rainbow Drop spot
+    charlock_lm = map->walkable[warp->x+3][warp->y];*/
+    charlock_lm = map->walkable[map->rainbow_drop->x][map->rainbow_drop->y];
 
     if (RANDOM_MAP(map)) {
         if (charlock_lm != largest && charlock_lm != next) {
@@ -873,4 +969,3 @@ BOOL map_generate_terrain(dw_rom *rom)
 
     return map_encode(&rom->map);
 }
-
