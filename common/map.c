@@ -498,8 +498,8 @@ static void place_charlock(dw_map *map, int largest, int next)
         /* Advanced Placement of Charlock*/
 
         /*Search for Bridge tiles*/
-        for (i=1; i <= 120; i++) {
-            for (j=2; j <= 119; j++) {
+        for (i=0; i <= 119; i++) {
+            for (j=1; j <= 118; j++) {
                 /*if a bridge is found, convert it to water*/
                 if (map->tiles[j][i] == TILE_BRIDGE) {
                     map->tiles[j][i] = TILE_WATER;
@@ -570,12 +570,12 @@ static void place_charlock(dw_map *map, int largest, int next)
 
             /*mark the location of the rainbow bridge*/
             
-            if (map->tiles[x][y+1] == TILE_WATER) {
+            /*if (map->tiles[x][y+1] == TILE_WATER) {
                 map->tiles[x][y+1] = TILE_BLOCK;
             }
             if (map->tiles[x][y-1] == TILE_WATER) {
                 map->tiles[x][y-1] = TILE_BLOCK;
-            }
+            }*/
             
             /*place charlock on side of bridge that is not largest or next*/
             find_walkable_area(map, lm_sizes, &largest, &next);
